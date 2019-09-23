@@ -36,7 +36,8 @@
 
 #include <numeric>
 
-#include "sc/sidechain.h"
+#include "sc/sidechaincore.h"
+#include "sc/sidechainrpc.h"
 
 using namespace std;
 
@@ -83,16 +84,7 @@ void WalletTxToJSON(const CWalletTx& wtx, UniValue& entry, isminefilter filter)
     int confirms = wtx.GetDepthInMainChain();
     entry.push_back(Pair("confirmations", confirms));
     if (wtx.IsCoinBase())
-    {
-        if (wtx.IsCoinCertified() )
-        {
-            entry.push_back(Pair("certified", true));
-        }
-        else
-        {
-            entry.push_back(Pair("generated", true));
-        }
-    }
+        entry.push_back(Pair("generated", true));
     if (confirms > 0)
     {
         entry.push_back(Pair("blockhash", wtx.hashBlock.GetHex()));
@@ -685,9 +677,11 @@ static void ScHandleCertificate(CWalletTx& wtx, const uint256& scId, std::vector
     CReserveKey keyChange(pwalletMain);
     CAmount nFeeRequired = 0;
     string strFailReason;
+#if 0
     bool fCreated = pwalletMain->CreateCertificate(scId, vecCcSend, wtx, keyChange, nFeeRequired, strFailReason);
     if (!fCreated)
         throw JSONRPCError(RPC_WALLET_ERROR, strFailReason);
+#endif
     if (!pwalletMain->CommitTransaction(wtx, keyChange))
         throw JSONRPCError(RPC_WALLET_ERROR, "Transaction commit failed");
 }
@@ -1728,9 +1722,7 @@ void ListTransactions(const CWalletTx& wtx, const string& strAccount, int nMinDe
                 MaybePushAddress(entry, r.destination);
                 if (wtx.IsCoinBase())
                 {
-                    if (wtx.IsCoinCertified())
-                        entry.push_back(Pair("category", "certified"));
-                    else if (wtx.GetDepthInMainChain() < 1)
+                    if (wtx.GetDepthInMainChain() < 1)
                         entry.push_back(Pair("category", "orphan"));
                     else if (wtx.GetBlocksToMaturity() > 0)
                         entry.push_back(Pair("category", "immature"));
@@ -2782,10 +2774,6 @@ UniValue listunspent(const UniValue& params, bool fHelp)
         entry.push_back(Pair("txid", out.tx->GetHash().GetHex()));
         entry.push_back(Pair("vout", out.i));
         entry.push_back(Pair("generated", out.tx->IsCoinBase()));
-        if (out.tx->IsCoinBase() )
-        {
-            entry.push_back(Pair("certified", out.tx->IsCoinCertified()));
-        }
         CTxDestination address;
         if (ExtractDestination(out.tx->vout[out.i].scriptPubKey, address)) {
             entry.push_back(Pair("address", CBitcoinAddress(address).ToString()));
@@ -4047,6 +4035,7 @@ UniValue sc_fwdtr_many(const UniValue& params, bool fHelp)
     return wtx.GetHash().GetHex();
 }
 
+#if 0
 UniValue sc_bwdtr(const UniValue& params, bool fHelp)
 {
     if (!EnsureWalletIsAvailable(fHelp))
@@ -4139,6 +4128,7 @@ UniValue sc_bwdtr(const UniValue& params, bool fHelp)
 
     return wtx.GetHash().GetHex();
 }
+#endif
 
 UniValue sc_certlock_many(const UniValue& params, bool fHelp)
 {

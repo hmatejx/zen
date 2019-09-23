@@ -28,7 +28,7 @@ using namespace zen;
 #include <boost/filesystem.hpp>
 #include <boost/thread.hpp>
 
-#include "sc/sidechain.h"
+#include "sc/sidechaincore.h"
 
 using namespace std;
 using namespace libzcash;
@@ -1050,16 +1050,7 @@ bool CWallet::AddToWallet(const CWalletTx& wtxIn, bool fFromLoadWallet, CWalletD
     }
     else
     {
-        if (wtxIn.IsCoinCertified() && !IsMine(wtxIn) )
-        {
-            // this transaction generates coins for a payee other than me
-            LogPrint("sc", "%s():%d - tx[%s]: certificate grants amount for payees different than me\n",
-                __func__, __LINE__, hash.ToString() );
-            return true;
-        }
-
         LOCK(cs_wallet);
-
         // Inserts only if not already there, returns tx inserted or tx found
         pair<map<uint256, CWalletTx>::iterator, bool> ret = mapWallet.insert(make_pair(hash, wtxIn));
         CWalletTx& wtx = (*ret.first).second;
@@ -1710,7 +1701,6 @@ void CWalletTx::GetAmounts(list<COutputEntry>& listReceived, list<COutputEntry>&
 
         if (nDebit > 0)
         {
-            // do not consider sc creation since we sent amount to the foundation
             //fillScSent(vsc_ccout, listScSent);
             fillScSent(vcl_ccout, listScSent);
             fillScSent(vft_ccout, listScSent);
@@ -1908,7 +1898,7 @@ void CWallet::ReacceptWalletTransactions()
 bool CWalletTx::RelayWalletTransaction()
 {
     assert(pwallet->GetBroadcastTransactions());
-    if (!IsCoinBase() || IsCoinCertified())
+    if (!IsCoinBase())
     {
         if (GetDepthInMainChain() == 0) {
             LogPrintf("Relaying wtx %s\n", GetHash().ToString());
@@ -2619,6 +2609,7 @@ bool CWallet::FundTransaction(CMutableTransaction& tx, CAmount &nFeeRet, int& nC
     return true;
 }
 
+#if 0
 bool CWallet::CreateCertificate(
         const uint256& scId,
         const std::vector< Sidechain::CcRecipientVariant >& vecCcSend,
@@ -2798,7 +2789,7 @@ bool CWallet::CreateCertificate(
 
     return true;
 }
-
+#endif
 
 bool CWallet::CreateTransaction(
     const std::vector<CRecipient>& vecSend, const std::vector< Sidechain::CcRecipientVariant >& vecCcSend,
@@ -3941,7 +3932,7 @@ int CMerkleTx::GetDepthInMainChain(const CBlockIndex* &pindexRet) const
 int CMerkleTx::GetBlocksToMaturity() const
 {
     // not coinbase or certified coin
-    if (!IsCoinBase() || IsCoinCertified())
+    if (!IsCoinBase())
         return 0;
     
     return max(0, (COINBASE_MATURITY+1) - GetDepthInMainChain());
@@ -4076,13 +4067,6 @@ bool CRecipientFactory::set(const CRecipientBackwardTransfer& r)
 {
     // fill vout here but later their amount will be reduced carving out the fee by the caller
     CTxOut txout(r.nValue, r.scriptPubKey);
-
-    // for the time being we support one and only one entry 
-    if (tx->vsc_cert.size() != 1)
-    {
-        err = _("One Certificate only is supported");
-        return false;
-    }
 
     tx->vout.push_back(txout);
     return true;

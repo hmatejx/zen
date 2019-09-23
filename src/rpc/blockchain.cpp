@@ -22,7 +22,7 @@
 
 #include <regex>
 
-#include "sc/sidechain.h"
+#include "sc/sidechaincore.h"
 
 using namespace std;
 
@@ -1049,7 +1049,7 @@ UniValue getscgenesisinfo(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid not yet created: ") + scId.ToString());
     }
  
-    const uint256& blockHash = info.ownerBlockHash;
+    const uint256& blockHash = info.creationBlockHash;
 
     if (mapBlockIndex.count(blockHash) == 0)
     {
@@ -1077,14 +1077,14 @@ UniValue getscgenesisinfo(const UniValue& params, bool fHelp)
     // get pow data
     const int vec_size = Params().GetConsensus().nPowAveragingWindow + CBlockIndex::nMedianTimeSpan;
 
-    std::vector<sPowRelatedData> vData;
+    std::vector<ScPowRelatedData> vData;
     vData.reserve(vec_size);
 
     CBlockIndex* prev = pblockindex;
 
     for (int i = 0; i < vec_size; i++)
     {
-        sPowRelatedData s = {};
+        ScPowRelatedData s = {};
         prev = prev->pprev;
         if (!prev)
         {

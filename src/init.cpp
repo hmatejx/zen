@@ -65,7 +65,7 @@
 
 #include "librustzcash.h"
 
-#include "sc/sidechain.h"
+#include "sc/sidechaincore.h"
 
 using namespace std;
 

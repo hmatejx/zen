@@ -43,6 +43,8 @@
 #include "zen/forkmanager.h"
 #include "zen/delay.h"
 
+#include "sc/sidechaincore.h"
+
 using namespace zen;
 
 using namespace std;
@@ -1058,8 +1060,8 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
 
 
     // Transactions can contain empty `vin` and `vout` so long as
-    // `vjoinsplit` is non-empty or we have a certificate.
-    if (tx.vin.empty() && tx.vjoinsplit.empty() && !tx.IsCoinCertified() )
+        // `vjoinsplit` is non-empty.
+        if (tx.vin.empty() && tx.vjoinsplit.empty())
     {
         LogPrint("sc", "%s():%d - Error: tx[%s]\n", __func__, __LINE__, tx.GetHash().ToString() );
         return state.DoS(10, error("CheckTransaction(): vin empty"),
@@ -1069,8 +1071,10 @@ bool CheckTransactionWithoutProofVerification(const CTransaction& tx, CValidatio
     // also allow the case when crosschain outputs are not empty. In that case there might be no vout at all
     // when utxo reminder is only dust, which is added to fee leaving no change for the sender
     if (tx.vout.empty() && tx.vjoinsplit.empty() && tx.ccIsNull())
+    {
         return state.DoS(10, error("CheckTransaction(): vout empty"),
                          REJECT_INVALID, "bad-txns-vout-empty");
+    }
 
     // Size limits
     BOOST_STATIC_ASSERT(MAX_BLOCK_SIZE > MAX_TX_SIZE); // sanity
@@ -1288,8 +1292,8 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
     if (!ForkManager::getInstance().isAfterChainsplit(chainActive.Tip()->nHeight))
         return false;
 
-    // Coinbase is only valid in a block, not as a loose transaction, unless we have a valid sc certificate
-    if (tx.IsCoinBase() && !tx.IsCoinCertified())
+    // Coinbase is only valid in a block, not as a loose transaction
+    if (tx.IsCoinBase())
     {
         return state.DoS(100, error("AcceptToMemoryPool: coinbase as individual tx"),
                          REJECT_INVALID, "coinbase");
@@ -1323,21 +1327,15 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
     // Check for conflicts with in-memory transactions
     {
         LOCK(pool.cs); // protect pool.mapNextTx
-
-        // skip check if we are handling a certificate, since is similar to coinbase and has no real vin
-        if (!tx.IsCoinCertified() )
+        for (unsigned int i = 0; i < tx.vin.size(); i++)
         {
-            for (unsigned int i = 0; i < tx.vin.size(); i++)
+            COutPoint outpoint = tx.vin[i].prevout;
+            if (pool.mapNextTx.count(outpoint))
             {
-                COutPoint outpoint = tx.vin[i].prevout;
-                if (pool.mapNextTx.count(outpoint))
-                {
-                    // Disable replacement feature for now
-                    return false;
-                }
+                // Disable replacement feature for now
+                return false;
             }
         }
-
         BOOST_FOREACH(const JSDescription &joinsplit, tx.vjoinsplit) {
             BOOST_FOREACH(const uint256 &nf, joinsplit.nullifiers) {
                 if (pool.mapNullifiers.count(nf))
@@ -1348,9 +1346,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
         }
 
         // beside the check performed in CheckTransaction above, perform some more checks specific to mempool. 
-        // 1. if this tx creates a sc, no other tx must be doing the same in the mempool
-        // 2. if this tx has a certificate, ensure that in scid balance we take also account of any other fwd/bwd 
-        //    tx in mempool for the same scid
+        // If this tx creates a sc, no other tx must be doing the same in the mempool
         if (!scMgr.checkMemPool(pool, tx, state) )
         {
             return false;
@@ -1362,9 +1358,6 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
         CCoinsViewCache view(&dummy);
 
         CAmount nValueIn = 0;
-
-        // skip input check if we have a certificate
-        if (!tx.IsCoinCertified() )
         {
             LOCK(pool.cs);
             CCoinsViewMemPool viewMemPool(pcoinsTip, pool);
@@ -1414,14 +1407,6 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
             // we have all inputs cached now, so switch back to dummy, so we don't need to keep lock on mempool
             view.SetBackend(dummy);
         }
-        else
-        {
-            BOOST_FOREACH(const auto& entry, tx.vsc_cert)
-            {
-                nValueIn += entry.totalAmount;
-            }
-        }
-
 
         // Check for non-standard pay-to-script-hash in inputs
         if (getRequireStandard() && !AreInputsStandard(tx, view))
@@ -1903,7 +1888,7 @@ int GetSpendHeight(const CCoinsViewCache& inputs)
 bool IsCommunityFund(const CCoins *coins, int nIn)
 {
     if(coins != NULL &&
-       (coins->IsCoinBase() && !coins->IsCoinCertified() ) &&
+       coins->IsCoinBase() &&
        ForkManager::getInstance().isAfterChainsplit(coins->nHeight) &&
        coins->vout.size() > nIn)
     {
@@ -1942,8 +1927,7 @@ bool CheckTxInputs(const CTransaction& tx, CValidationState& state, const CCoins
             const CCoins *coins = inputs.AccessCoins(prevout.hash);
             assert(coins);
 
-            if (coins->IsCoinBase() && !coins->IsCoinCertified() )
-            {
+            if (coins->IsCoinBase()) {
                 // Ensure that coinbases are matured
                 if (nSpendHeight - coins->nHeight < COINBASE_MATURITY) {
                     return state.Invalid(
@@ -2221,9 +2205,7 @@ bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex
         }
 
         // restore inputs
-        //if (i > 0) { // not coinbases
-        bool coinbase = tx.IsCoinBase(); // also sidechain certifier generated coins
-        if (!coinbase) { // not coinbases
+        if (i > 0) { // not coinbases
             const CTxUndo &txundo = blockUndo.vtxundo[i-1];
             if (txundo.vprevout.size() != tx.vin.size())
                 return error("DisconnectBlock(): transaction and undo data inconsistent");
@@ -2521,23 +2503,11 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             control.Add(vChecks);
         }
 
-        // add the certificates fee if any
-        if (tx.IsCoinCertified() )
-        {
-            BOOST_FOREACH(const auto& entry, tx.vsc_cert)
-            {
-                nFees += entry.totalAmount;
-            }
-            nFees -= tx.GetValueOut();
-        }
-
         CTxUndo undoDummy;
         if (i > 0) {
             blockundo.vtxundo.push_back(CTxUndo());
         }
-
-        bool coinbase = tx.IsCoinBase(); // also sidechain certificates generate coins
-        UpdateCoins(tx, state, view, coinbase ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        UpdateCoins(tx, state, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
 
         BOOST_FOREACH(const JSDescription &joinsplit, tx.vjoinsplit) {
             BOOST_FOREACH(const uint256 &note_commitment, joinsplit.commitments) {
@@ -2834,9 +2804,7 @@ bool static DisconnectTip(CValidationState &state) {
         // ignore validation errors in resurrected transactions
         list<CTransaction> removed;
         CValidationState stateDummy;
-        if (
-            (tx.IsCoinBase() && !tx.IsCoinCertified() ) ||
-            !AcceptToMemoryPool(mempool, stateDummy, tx, false, NULL))
+        if (tx.IsCoinBase() || !AcceptToMemoryPool(mempool, stateDummy, tx, false, NULL))
         {
             mempool.remove(tx, removed, true);
         }
@@ -3627,27 +3595,14 @@ bool CheckBlock(const CBlock& block, CValidationState& state,
         return state.DoS(100, error("CheckBlock(): first tx is not coinbase"),
                          REJECT_INVALID, "bad-cb-missing");
     for (unsigned int i = 1; i < block.vtx.size(); i++)
-        if (block.vtx[i].IsCoinBase() && !block.vtx[i].IsCoinCertified() )
+        if (block.vtx[i].IsCoinBase())
             return state.DoS(100, error("CheckBlock(): more than one coinbase"),
                              REJECT_INVALID, "bad-cb-multiple");
 
     // Check transactions
-    const std::vector<CTransaction>* blockVtx = &block.vtx;
-
-    Sidechain::ScAmountMap mScAmounts;
-    std::vector<CTransaction> vtxReordered;
-    std::set<uint256> sScId;
-    if (Sidechain::ScMgr::hasCrosschainTransfers(block, vtxReordered, sScId) )
+    BOOST_FOREACH(const CTransaction& tx, block.vtx)
     {
-        // if we have sidechain fw/bw transfers, we need to pass along the current amount of any handled sc
-        // when checking transactions, and if we have bw transfers we also have to reorder the transactions list
-        blockVtx = &vtxReordered;
-        scMgr.initScAmounts(mScAmounts, &sScId);
-    }
-
-    BOOST_FOREACH(const CTransaction& tx, *blockVtx)
-    {
-        if (!CheckTransaction(tx, state, verifier, &mScAmounts, fVerifyingDB))
+        if (!CheckTransaction(tx, state, verifier))
         {
             return error("CheckBlock(): CheckTransaction failed");
         }
