@@ -45,7 +45,6 @@ static Sidechain::ScMgr& scMgr = Sidechain::ScMgr::instance();
 using namespace std;
 
 #include "zen/forkmanager.h"
-
 using namespace zen; 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -338,9 +337,6 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn,  unsigned int nBlo
     // Collect memory pool transactions into the block
     CAmount nFees = 0;
 
-    Sidechain::ScAmountMap mScAmounts;
-    scMgr.initScAmounts(mScAmounts);
-
     {
         LOCK2(cs_main, mempool.cs);
         CBlockIndex* pindexPrev = chainActive.Tip();
@@ -429,11 +425,11 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn,  unsigned int nBlo
             if (!view.HaveInputs(tx))
                 continue;
 
-            // skip transactions that send forward/backward crosschain amounts if the creation of the target sidechain is
+            // skip transactions that send forward crosschain amounts if the creation of the target sidechain is
             // not yet in blockchain. This should happen only if a chain has been reverted and a mix of creation/transfers
             // has been placed back in the mem pool The skipped tx will be mined in the next block if the scid is found
             CValidationState state;
-            if ( !Sidechain::ScMgr::instance().checkSidechainForwardTransaction(tx, state, &mScAmounts) )
+            if ( !Sidechain::ScMgr::instance().checkSidechainForwardTransaction(tx, state) )
             {
                 if (state.GetRejectCode() == REJECT_SCID_NOT_FOUND)
                 {

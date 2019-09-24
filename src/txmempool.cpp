@@ -99,12 +99,8 @@ bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry,
     LOCK(cs);
     mapTx[hash] = entry;
     const CTransaction& tx = mapTx[hash].GetTx();
-
     for (unsigned int i = 0; i < tx.vin.size(); i++)
-    {
         mapNextTx[tx.vin[i].prevout] = CInPoint(&tx, i);
-    }
-
     BOOST_FOREACH(const JSDescription &joinsplit, tx.vjoinsplit) {
         BOOST_FOREACH(const uint256 &nf, joinsplit.nullifiers) {
             mapNullifiers[nf] = &tx;
@@ -178,8 +174,7 @@ void CTxMemPool::removeCoinbaseSpends(const CCoinsViewCache *pcoins, unsigned in
     list<CTransaction> transactionsToRemove;
     for (std::map<uint256, CTxMemPoolEntry>::const_iterator it = mapTx.begin(); it != mapTx.end(); it++) {
         const CTransaction& tx = it->second.GetTx();
-        BOOST_FOREACH(const CTxIn& txin, tx.vin)
-        {
+        BOOST_FOREACH(const CTxIn& txin, tx.vin) {
             std::map<uint256, CTxMemPoolEntry>::const_iterator it2 = mapTx.find(txin.prevout.hash);
             if (it2 != mapTx.end())
                 continue;

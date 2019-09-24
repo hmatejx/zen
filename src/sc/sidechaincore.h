@@ -113,10 +113,10 @@ class ScMgr
     CAmount getSidechainBalance(const uint256& scId);
 
     bool checkMemPool(CTxMemPool& pool, const CTransaction& tx, CValidationState& state);
-    bool checkTransaction(const CTransaction& tx, CValidationState& state, ScAmountMap* mScAmounts, bool fVerifyingDB);
-    bool checkSidechainForwardTransaction(const CTransaction& tx, CValidationState& state, ScAmountMap* mScAmounts);
+    bool checkTransaction(const CTransaction& tx, CValidationState& state);
+    bool checkSidechainForwardTransaction(const CTransaction& tx, CValidationState& state);
     bool checkSidechainBackwardTransaction(
-        const CTransaction& tx, CValidationState& state, ScAmountMap* mScAmounts, bool fVerifyingDB = false);
+        const CTransaction& tx, CValidationState& state);
 
     bool checkSidechainCreationFunds(const CTransaction& tx, int nHeight);
 
@@ -134,21 +134,10 @@ class ScMgr
     // used when funding a raw tx 
     void fillFundCcRecipients(const CTransaction& tx, std::vector<CcRecipientVariant>& vecCcSend);
 
-#if 0
-    // get the set of scid that this tx targets, not dependong on the type (creation, fw, cert, ...)
-    static void getHandledSidechainList(const CTransaction& tx, std::set<uint256>& scIdSet);
-    // return true if the inputs are targeting at least one common scid
-    static bool handlingSameScid(const CTransaction& txa, const CTransaction& txb);
-#endif
-
     // return true if any sc related tx has been found. In this case out parameter vTxReord has the same
     // contents as the block.vtx vector, but all certificates, if any is found, have been moved at the end,
     // and sScId contains all the concerned sc id.
     static bool hasCrosschainTransfers(const CBlock& block, std::vector<CTransaction>& vTxReord, std::set<uint256>& sScId);
-
-    // take a snapshot (map of scid/balance) of all the balances concerning the sc whose ids are passed in the input set
-    // param consider all the sc in the db if the passed set is null. 
-    void initScAmounts(ScAmountMap& mScAmounts, const std::set<uint256>* sScId = NULL);
 
     // print functions
     bool dump_info(const uint256& scId);

@@ -33,7 +33,6 @@
 #include <utility>
 #include <vector>
 
-//#include "sc/sidechain.h"
 #include "sc/sidechainrpc.h"
 
 /**

@@ -243,7 +243,7 @@ bool ScMgr::isCreating(const CTransaction& tx, const uint256& scId)
     return false;
 }
 
-bool ScMgr::checkSidechainForwardTransaction(const CTransaction& tx, CValidationState& state, ScAmountMap* mScAmounts)
+bool ScMgr::checkSidechainForwardTransaction(const CTransaction& tx, CValidationState& state)
 {
     if (tx.vft_ccout.size() )
     {
@@ -269,17 +269,6 @@ bool ScMgr::checkSidechainForwardTransaction(const CTransaction& tx, CValidation
                         __func__, __LINE__, txHash.ToString(), scId.ToString() );
                 }
             }
-            else
-            {
-                if (mScAmounts && (mScAmounts->find(scId) != mScAmounts->end() ) )
-                {
-                    LogPrint("sc", "= FWD = %s():%d - scId=%s balance before: %s\n",
-                        __func__, __LINE__, scId.ToString(), FormatMoney((*mScAmounts)[scId]));
-                    (*mScAmounts)[scId] += ft.nValue;
-                    LogPrint("sc", "= FWD = %s():%d - scId=%s balance after: %s\n",
-                        __func__, __LINE__, scId.ToString(), FormatMoney((*mScAmounts)[scId]));
-                }
-            }
             LogPrint("sc", "%s():%d - tx[%s]: scid[%s], fw[%s]\n",
                 __func__, __LINE__, txHash.ToString(), scId.ToString(), FormatMoney(ft.nValue) );
         }
@@ -287,8 +276,7 @@ bool ScMgr::checkSidechainForwardTransaction(const CTransaction& tx, CValidation
     return true;
 }
 
-bool ScMgr::checkTransaction(const CTransaction& tx, CValidationState& state,
-    ScAmountMap* mScAmounts, bool fVerifyingDB)
+bool ScMgr::checkTransaction(const CTransaction& tx, CValidationState& state)
 {
     // check version consistency
     if (tx.nVersion != SC_TX_VERSION )
@@ -321,29 +309,12 @@ bool ScMgr::checkTransaction(const CTransaction& tx, CValidationState& state,
         return false;
     }
 
-    if (!checkSidechainForwardTransaction(tx, state, mScAmounts) )
+    if (!checkSidechainForwardTransaction(tx, state) )
     {
         return false;
     }
 
     return true;
-}
-
-void ScMgr::initScAmounts(ScAmountMap& mScAmounts, const std::set<uint256>* sScId)
-{
-    LOCK(sc_lock);
-    BOOST_FOREACH(const auto& entry, mScInfo)
-    {
-        if (sScId)
-        {
-            if (!sScId->count(entry.first) )
-            {
-                // this is not interesting
-                continue;
-            }
-        }
-        mScAmounts[entry.first] = entry.second.balance;
-    }
 }
 
 

@@ -93,10 +93,6 @@ public:
         nHeight = nHeightIn;
         nVersion = tx.nVersion;
         ClearUnspendable();
-        if (tx.nVersion != 1 && tx.nVersion != -4)
-        {
-            std::cout << "Version: " << tx.nVersion << ", [" << tx.GetHash().ToString() << "]" << std::endl;
-        }
     }
 
     //! construct a CCoins from a CTransaction, at a given height
